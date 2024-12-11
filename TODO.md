@@ -2,6 +2,8 @@ TODO
 
 - [X] copy over the .env files
 - [X] more granular functions for file syncing
+- [X] add confirm()
+- [X] put up on github
 - [ ] do the build process if container not running already (would jenkins do that instead?)
 - [ ] ask for ssh passphrase once/get ssh credentials in a conventient way
 - [ ] sync the .env files over too
@@ -18,6 +20,4 @@ TODO
 - [ ] fresh server preparation should be its own separate script that gets uploaded to the vps and ran?
 - [ ] pwgen to generate pwd for vps user
 - [ ] function to prepare fresh server
-- [ ]
-- [X] add confirm()
-- [X] put up on github
+- [ ] scan repo history for security issues
