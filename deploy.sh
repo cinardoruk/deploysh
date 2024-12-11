@@ -151,7 +151,7 @@ usage(){
 	sync_media      Sync media files
 	sync_email      Sync email files
 	sync_all        Sync all files
-	WARNING: sync uses rsync with the --delete option
+	WARNING: sync uses rsync with the --delete option. State of input/source dirs will replace the state of remote dirs. e.g sync_media will remove images on the remote media dir which are not on the local media dir
 
 	all             Run all steps (dump, transfer, restore, sync_all)
 	help            Display this help message
