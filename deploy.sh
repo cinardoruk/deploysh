@@ -1,30 +1,7 @@
-#!/bin/zsh
+#!/bin/bash
 :<<COMMENT
-may I please automate the db syncing process between local and remote?
-1. create db dump on local machine
-2. scp it to remote
-3. at the remote, make sure the db service is running
-4. delete everything on the current db
-5. import the dump
-6. sync
 
-TODO
-[x] copy over the .env files
-[ ] do the build process if container not running already (would jenkins do that instead?)
-[ ] ask for ssh passphrase once/get ssh credentials in a conventient way
-[x] sync the .env files over too
-[x] more granular functions for file syncing
-[ ] make django do a collectstatic --clean before syncing static files
-[ ] granular execution through args passed to script
-[ ] better description of script at the top
-[ ] add docker system prune -a docker builder prune
-[ ] add compose restart function
-[ ] granular db syncing using django fixtures
-[ ] function to back up the whole server ? how do we do regular backups?
-[ ] do I run jenkins in a docker container?
-[ ] function to prepare fresh server
-[ ] add confirm()
-[ ] put up on github
+
 
 COMMENT
 
@@ -51,7 +28,112 @@ source deploy.env
 
 prepare_server ()
 {
-	echo "Preparing fresh server at $REMOTE_HOST"
+	echo "Preparing fresh debian server at $REMOTE_HOST"
+
+
+	# ssh into the server as root and run our commands. we need sshpass for this.
+	sudo pacman -Sy sshpass
+	sshpass -p "$ROOTPSW" ssh ${ROOTUSR}@${HOST_IP} "echo 'login successful'"
+
+	if [ $? -eq 0 ]; then
+		echo "initial login works ${ROOTUSR}@${HOST_IP}"
+	else
+		echo "initial login failed ${ROOTUSR}@${HOST_IP}"
+		exit 1
+	fi
+
+	echo "creating new user with a password, adding it to sudoers, and installing basic software"
+	sshpass -p "$ROOTPSW" ssh ${ROOTUSR}@${HOST_IP} <<- EOF
+
+	# create new user, add to sudoers, give it a password
+	adduser --gecos "" --disabled-password "$REMOTE_USER"
+	echo "$REMOTE_USER:$REMOTE_PASS" | chpasswd
+	usermod -aG sudo "$REMOTE_USER"
+
+	# switch to it
+	su - "$REMOTE_USER"
+
+	# install basic software
+	echo "$REMOTE_PASS" | sudo apt update && sudo apt upgrade -y
+	sudo apt install -y wget ufw fail2ban neofetch htop neovim zsh ssh certbot python3-certbot-nginx ca-certificates curl git nginx
+
+	EOF
+
+	if [ $? -eq 0 ]; then
+		echo "new user creation successful $REMOTE_USER_AT"
+	else
+		echo "new user creationg failed! $REMOTE_USER_AT"
+		exit 1
+	fi
+
+	# create new ssh key locally
+
+	ssh-keygen -t rsa -b 4096 -C "${USER}@${SSH_ALIAS}" -f "$SSH_KEYPATH" -N "$SSH_PWD"
+	if [ $? -eq 0 ]; then
+		echo "SSH keypair created at $KEY_PATH and $KEY_PATH.pub"
+	else
+		echo "Failed to generate SSH keypair."
+		exit 1
+	fi
+
+	# move public key to server for user
+	# will ask for pwd interactively
+
+	ssh-copy-id -i ~/.ssh/id_rsa.pub username@remote_host
+
+	# add alias to local ~/.ssh/config to be used later
+	echo $SSH_ALIAS_ENTRY >> $HOME/.ssh/config
+
+	# test ssh access using key
+	ssh $SSH_ALIAS "echo 'SSH setup successful!'"
+	if [ $? -eq 0 ]; then
+		echo "SSH access $REMOTE_USER_AT verified successfully"
+	else
+		echo "SSH access test failed $REMOTE_USER_AT"
+		exit 1
+	fi
+
+	# in server edit sshd_config
+	EDIT_SSHD="
+	echo $REMOTE_PASS sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config;
+	sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config;
+	sudo sed -i 's/^#\?UsePAM.*/UsePAM no/' /etc/ssh/sshd_config;
+	sudo sed -i 's/^#\?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config;
+	sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config;
+	sudo sed -i 's/^#\?AuthorizedKeysFile.*/AuthorizedKeysFile .ssh\/authorized_keys/' /etc/ssh/sshd_config;
+	sudo grep -q '^Port 1995' /etc/ssh/sshd_config || echo 'Port 1995' | sudo tee -a /etc/ssh/sshd_config;
+	sudo grep -q '^ClientAliveInterval 60' /etc/ssh/sshd_config || echo 'ClientAliveInterval 60' | sudo tee -a /etc/ssh/sshd_config;
+	sudo grep -q '^ClientAliveCountMax 3' /etc/ssh/sshd_config || echo 'ClientAliveCountMax 3' | sudo tee -a /etc/ssh/sshd_config;
+	sudo sshd -t
+	sudo systemctl restart sshd
+	"
+	ssh $SSH_ALIAS "$EDIT_SSHD"
+	echo "Remote SSH configuration updated and SSH service restarted."
+
+	# try logging in using the user's key again just to make sure
+
+	# copy over dotfiles/.zshrc
+	# set TERM to the right thing
+
+	# configure ufw
+
+
+	# install docker
+	sudo mkdir -p /etc/apt/keyrings
+	curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+	echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+	# verify docker installation
+
+	# add the $REMOTE_USER to the group 'docker'
+	sudo usermod -aG docker $REMOTE_USER
+
+
+	# get the bare repo ready
+
+	# set up post-receive hook
+
+
 
 }
 
